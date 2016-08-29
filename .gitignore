@@ -34,3 +34,4 @@
 /web/favicon.ico
 /web/apple-touch-icon.png
 /src/.htaccess
+!bin/chat_server.php
