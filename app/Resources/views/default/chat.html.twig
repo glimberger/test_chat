@@ -1,0 +1,424 @@
+{% extends 'base.html.twig' %}
+
+{% block body %}
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-6">
+                <h4>Chatroom {{ roomID }}</h4>
+                <div class="card">
+                    <div class="card-header">
+                        <h6 id="count" class="text-muted"></h6>
+                    </div>
+                    <div id="chatroom-container" class="card-block" style="max-height: 400px; overflow-y: auto">
+                        <div id="chatroom">
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="form-group row">
+                            <div class="col-lg-8 col-xs-7">
+                                <input id="type" class="form-control" type="text" placeholder="Type" inputmode="latin-prose" maxlength="254">
+                            </div>
+                            <div class="col-lg-4 col-xs-5">
+                                <button id="send" class="form-control btn btn-primary" type="button"><i class="fa fa-paper-plane" aria-hidden="true"></i>&nbsp;Send</button>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-lg-12">
+                                <div id="emoticons" class="btn-group" role="group" aria-label="Emoticons">
+                                    <button type="button" class="emoticon btn btn-secondary">😊</button>
+                                    <button type="button" class="emoticon btn btn-secondary">😉</button>
+                                    <button type="button" class="emoticon btn btn-secondary">🙂</button>
+                                    <button type="button" class="emoticon btn btn-secondary">🤔</button>
+                                    <button type="button" class="emoticon btn btn-secondary">😐</button>
+
+                                    <button type="button" class="emoticon btn btn-secondary">☺</button>
+                                    <button type="button" class="emoticon btn btn-secondary">☹</button>
+                                    <button type="button" class="emoticon btn btn-secondary">✉</button>
+                                    <button type="button" class="emoticon btn btn-secondary">☝</button>
+                                    <button type="button" class="emoticon btn btn-secondary">✌</button>
+                                    <button type="button" class="emoticon btn btn-secondary">⌛</button>
+                                    <button type="button" class="emoticon btn btn-secondary">☀</button>
+                                    <button type="button" class="emoticon btn btn-secondary">☁</button>
+                                    <button type="button" class="emoticon btn btn-secondary">✏</button>
+                                    <button type="button" class="emoticon btn btn-secondary">☎</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    <script src="{{ asset('bundles/app/js/md5.js') }}"></script>
+    <script>
+        var env = '{{ app.environment }}';
+        var socket = 'ws://{{ websocketServer }}';
+
+        var $chatRoom = $('#chatroom');
+        var $typeInput = $('#type');
+        var $sendButton = $('#send');
+        var $userCount = $('#count');
+
+        var localRoom = {
+            clients: {},
+            messages: {}
+        };
+
+        var conn = null;
+        var socketException = null;
+        try {
+            conn = new WebSocket(socket);
+        } catch (ex) {
+            socketException = ex;
+            console.log("Error:", ex.message);
+        }
+
+        var msgType = {
+            SUB:     'subscribe',
+            SUB_ACK: 'subscribe_acknowledge',
+            PUB:     'publish',
+            PUB_ACK: 'publish_acknowledge',
+            JND:     'joined',
+            LFT:     'left',
+            TYP_BEG: 'begin_typing',
+            TYP_END: 'end_typing',
+            MSG:     'message',
+            CLS:     'connection closed',
+            ERR:     'connection error'
+        };
+
+        var room = {
+            id: {{ roomID }}
+        };
+
+        var hash = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(0, 8);
+        var emitter = {
+            username: hash,
+            fullname: hash,
+            address:  '{{ app.request.clientIp }}'
+        };
+
+        var Message = (function () {
+            function Message(type, text, room, emitter) {
+                this.id = calcMD5(new Date().getTime().toString() + hash);
+                this.type = type;
+                this.room = room;
+                this.emitter = emitter;
+                this.timestamp_emitter = new Date();
+                if (text) {
+                    this.text = text;
+                }
+            }
+            Message.prototype.send = function (connection) {
+                var jsonMsg = JSON.stringify(this);
+                if (env == 'dev') {
+                    console.log("SEND message: " + jsonMsg);
+                }
+                connection.send(jsonMsg);
+            };
+            return Message;
+        })();
+        
+//        function Message(type, text) {
+//
+//            this.id = calcMD5(new Date().getTime().toString() + hash);
+//            this.type = type;
+//            this.room = {
+//                id: roomID
+//            };
+//            this.emitter = {
+//                username: hash,
+//                fullname: hash,
+//                address: clientIP
+//            };
+//            this.timestamp_emitter = new Date();
+//            if (text !== undefined) {
+//                this.text = text;
+//            }
+//        }
+//
+//        Message.prototype = {
+//            send: function (connection) {
+//                var jsonMsg = JSON.stringify(this);
+//                if (env == 'dev') {
+//                    console.log("SEND message: " + jsonMsg);
+//                }
+//                connection.send(jsonMsg);
+//            }
+//        };
+
+        var messageService = {
+            dispatch: function(data)
+            {
+                var message = JSON.parse(data);
+                var time = new Date(message['timestamp_emitter']);
+                var id = null;
+
+                switch (message.type)
+                {
+                    // subscribe message ??
+                    case msgType.SUB:
+                        $userCount.text(message.room.count + " users online");
+                        localRoom.clients[message.emitter.username] = message.emitter;
+                        localStorage.setItem('chatroom/'+roomID, JSON.stringify(localRoom));
+                        break;
+
+                    // publish confirmation for the emitter
+                    case msgType.SUB_ACK:
+                        // update user count
+                        $userCount.text(message.room.count + " users online");
+                        break;
+
+                    // a user has left the room
+                    case msgType.LFT:
+                        // update user count
+                        $userCount.text(message.room.count + " users online");
+
+                        // update clients array
+                        delete localRoom.clients[message.emitter.username];
+
+                        // local persistence
+                        localStorage.setItem('chatroom/'+roomID, JSON.stringify(localRoom));
+                        break;
+
+                    // a user has joined the room
+                    case msgType.JND:
+                        // update user count
+                        $userCount.text(message.room.count + " users online");
+
+                        // local persistence
+                        localRoom.clients[message.emitter.username] = message.emitter;
+                        break;
+
+                    // the user begins typing
+                    case msgType.TYP_BEG:
+                        break;
+
+                        // the user ends typing
+                    case msgType.TYP_END:
+                        break;
+
+                    // local message
+                    case msgType.MSG:
+                        localRoom.messages[time.getTime()] = message;
+                        localStorage.setItem('chatroom/'+roomID, JSON.stringify(localRoom));
+                        break;
+
+                    // published message
+                    case msgType.PUB:
+                        if (message.emitter.address == clientIP) {
+                            // message published by another client in the same browser
+                            // we treat it like a local message
+                            message.type = msgType.MSG;
+                        }
+
+                        // local persistence
+                        localRoom.messages[time.getTime()] = message;
+                        localStorage.setItem('chatroom/'+roomID, JSON.stringify(localRoom));
+                        break;
+
+                    // publish confirmation for the emitter
+                    case msgType.PUB_ACK:
+                        id = message.correlationID;
+                        $('#'+id).find('.message-text').append(' <strong>OK</strong>');
+                        break;
+
+                    default:
+                        break;
+                }
+
+                messageService.print(message);
+            },
+            print: function (msg) {
+                var time = new Date(msg.timestamp_emitter);
+                var $msgDiv = $('<div id="' + msg.id + '" class="message row"></div>');
+
+                switch (msg.type)
+                {
+                    case msgType.MSG:
+                        $msgDiv.append('<p class="message-text card-title m-b-0">'+msg.text+'</p>');
+
+                        $msgDiv.wrapInner('<div class="card card-block card-inverse card-primary text-xs-right p-a-1"></div>');
+                        $msgDiv.wrapInner('<div class="col-xs-offset-3 col-xs-9"></div>');
+                        break;
+
+                    case msgType.PUB:
+                        $msgDiv.append('<p class="card-text small" style="margin-bottom: 0.5rem;"><span class="font-weight-bold">'+msg.emitter.fullname + '</span>' + " wrote:"+'</p>');
+
+                        $msgDiv.append('<p class="message-text card-title" style="margin-bottom: 0.5rem;">'+msg.text+'</p>');
+                        $msgDiv.append('<p class="card-text small text-muted">'+time.toLocaleDateString()+' - '+time.toLocaleTimeString()+'</p>');
+
+                        $msgDiv.wrapInner('<div class="card card-block card-inverse card-success p-a-1"></div>');
+                        $msgDiv.wrapInner('<div class="col-xs-9"></div>');
+                        break;
+
+                    case msgType.PUB_ACK:
+                        $msgDiv.append('<p class="card-text small">' + " you've joined the room" + '</p>');
+
+                        $msgDiv.wrapInner('<div class="card card-block card-inverse card-success p-a-1"></div>');
+                        $msgDiv.wrapInner('<div class="col-xs-offset-3 col-xs-9"></div>');
+                        break;
+
+                    case msgType.JND:
+                        $msgDiv.append('<p class="card-text small">' + msg.emitter.fullname + " has joined the room" + '</p>');
+
+                        $msgDiv.wrapInner('<div class="card card-block card-inverse card-info p-a-1"></div>');
+                        $msgDiv.wrapInner('<div class="col-xs-9"></div>');
+                        break;
+
+                    case msgType.LFT:
+                        $msgDiv.append('<p class="card-text small">'+ msg.emitter.fullname + " has left the room" + '</p>');
+
+                        $msgDiv.wrapInner('<div class="card card-block card-inverse card-info p-a-1"></div>');
+                        $msgDiv.wrapInner('<div class="col-xs-9"></div>');
+                        break;
+
+                    case msgType.CLS:
+                        $msgDiv.append('<p class="card-text small">'+ msg.text + '</p>');
+
+                        $msgDiv.wrapInner('<div class="card card-block card-inverse card-warning text-xs-right p-a-1"></div>');
+                        $msgDiv.wrapInner('<div class="col-xs-offset-3 col-xs-9"></div>');
+                        break;
+
+                    case msgType.ERR:
+                        $msgDiv.append('<p class="card-text small">'+ msg.text + '</p>');
+
+                        $msgDiv.wrapInner('<div class="card card-block card-inverse card-danger text-xs-right p-a-1"></div>');
+                        $msgDiv.wrapInner('<div class="col-xs-offset-3 col-xs-9"></div>');
+                        break;
+
+                    default:
+
+                }
+
+                // add the message
+                $chatRoom.append($msgDiv);
+
+                // scroll softly to the message
+                $('#chatroom-container').scrollTo($msgDiv, 'slow');
+            }
+        };
+
+        /**
+         * Log an websocket event.
+         */
+        function logEvent(event, msg) {
+            if (env == 'dev') {
+                console.log("EVENT " + event.type + " on " + event.target + ": " + msg);
+            }
+        }
+
+        jQuery(document).ready(function ($)
+        {
+            if (conn) {
+
+                /**
+                 * Websocket open event for the .
+                 */
+                conn.onopen = function (event) {
+                    logEvent(event, "Connection established");
+
+                    var msg = new Message(msgType.SUB, null, room, emitter);
+                    msg.send(conn);
+                };
+
+                /**
+                 * Websocket error event.
+                 */
+                conn.onerror = function (event) {
+                    var txt = "Websocket error";
+                    if (socketException != null) { txt += ": " + socketException.message}
+                    logEvent(event, txt);
+
+                    var msg = new Message(msgType.ERR, "Connection error");
+                    messageService.print(msg);
+                };
+
+                /**
+                 * Websocket close event.
+                 */
+                conn.onclose = function (event) {
+                    logEvent(event, "Connection closed (" + event.code + ") " + event.reason);
+
+                    // reset the connection
+                    conn = null;
+
+                    // display the error message
+                    var txt = "";
+                    if (event.code == '1006') {
+                        txt = "Connection closed abnormallly (" + event.code + ")";
+                    } else {
+                        txt = "Connection closed (" + event.code + ")"
+                    }
+                    var msg = new Message(msgType.CLS, txt);
+                    messageService.print(msg);
+                };
+
+                /**
+                 * Websocket message event.
+                 */
+                conn.onmessage = function (event) {
+                    logEvent(event, event.data);
+
+                    messageService.dispatch(event.data);
+                }
+            }
+
+            /**
+             * Keypress event for the type input.
+             * If the return key is pressed, a <br> tag is added to the field.
+             */
+            $typeInput.keypress(function (event) {
+                // check if the return key is pressed
+                if (event.which == 13) {
+                    var $this = $(this);
+                    // add a <br> tag to the field
+                    $this.val($this.val() + '<br>');
+                }
+            });
+
+            /**
+             * Click event for the send button.
+             */
+            $sendButton.click(function () {
+                if (conn == null) {
+                    $(this).blur();
+                    return false;
+                }
+
+                // check whether the type input is empty
+                if ($typeInput.val() == '') {
+                    $typeInput.focus();
+                    return false;
+                }
+
+                // build a MSG message and send it to the server
+                var message = new Message(msgType.MSG, $typeInput.val(), room, emitter);
+                message.send(conn);
+
+                // display the message
+                messageService.print(message);
+
+                // clear the type input field
+                $typeInput.val('');
+
+                // force the button to lost focus
+                $(this).blur();
+            });
+
+            /**
+             * Click event for the emoticon buttons.
+             */
+            $('.emoticon').click(function () {
+                // get the unicode emoticon and add it to the type input field
+                $typeInput.val($typeInput.val() + $(this).text());
+
+                $typeInput.focus();
+            });
+        });
+    </script>
+{% endblock %}

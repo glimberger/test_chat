@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>{% block title %}Welcome!{% endblock %}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link rel="stylesheet" href="{{ asset('vendor/bootstrap/dist/css/bootstrap.min.css') }}">
+        <link rel="stylesheet" href="{{ asset('vendor/font-awesome/css/font-awesome.min.css') }}">
+        {% block stylesheets %}{% endblock %}
+        <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}" />
+    </head>
+    <body>
+        {% block body %}{% endblock %}
+        {% block javascripts %}
+            <script src="{{ asset('vendor/jquery/dist/jquery.min.js') }}"></script>
+            <script src="{{ asset('vendor/tether/dist/js/tether.min.js') }}"></script>
+            <script src="{{ asset('vendor/bootstrap/dist/js/bootstrap.min.js') }}"></script>
+            <script src="{{ asset('vendor/jquery.scrollTo/jquery.scrollTo.min.js') }}"></script>
+        {% endblock %}
+    </body>
+</html>
