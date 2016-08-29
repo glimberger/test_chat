@@ -24,7 +24,7 @@ class DefaultController extends Controller
      * @param $id
      * @return \Symfony\Component\HttpFoundation\Response
 
-    @Route("/chat/{id}", name="chat")
+     * @Route("/chat/{id}", name="chat")
      */
     public function chatAction(Request $request, $id)
     {
